@@ -7,7 +7,7 @@ from data_versions import DataVersions
 from datastore import Datastore, CombinedDatastore
 from feature_type import FeatureType
 from rl_custom_policy import ZetaPolicy
-from rl_framework.policy import MaxBoltzmannQPolicy, Policy, LinearAnnealedPolicy, EpsGreedyQPolicy, SoftmaxPolicy, \
+from rl_framework.rl2.policy import MaxBoltzmannQPolicy, Policy, LinearAnnealedPolicy, EpsGreedyQPolicy, SoftmaxPolicy, \
     GreedyQPolicy, \
     BoltzmannQPolicy, BoltzmannGumbelQPolicy
 

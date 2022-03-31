@@ -3,6 +3,7 @@ from django.urls import path
 from .views.datastore import get_datastore
 from .views.index import index
 from .views.rl_controller import post_upload, post_feedback
+from .views.sl_controller import post_train_sl
 from .views.utilities_controller import get_state_store
 
 urlpatterns = [
@@ -10,6 +11,7 @@ urlpatterns = [
     path('upload', post_upload),
     path('feedback', post_feedback),
     path('view', get_datastore),
-    path('state_store', get_state_store)
+    path('state_store', get_state_store),
+    path('train_sl', post_train_sl)
 
 ]

@@ -1,7 +1,7 @@
 import numpy as np
 
-from rl_framework.core import Processor
-from rl_framework.util import WhiteningNormalizer
+from rl_framework.rl2.core import Processor
+from rl_framework.rl2.util import WhiteningNormalizer
 
 
 class MultiInputProcessor(Processor):

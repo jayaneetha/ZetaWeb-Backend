@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 from tensorflow.keras import Input
 
-from Backend import rl
+from Backend import rl, sl
 from ZetaPolicy.constants import NUM_MFCC, NO_features
 from ZetaPolicy.data_versions import DataVersions
 from ZetaPolicy.datastore_live import LiveDatastore
@@ -9,7 +9,7 @@ from ZetaPolicy.environments import LiveEnv
 from ZetaPolicy.feature_type import FeatureType
 from ZetaPolicy.models import get_model_9_rl
 from ZetaPolicy.rl_custom_policy import ZetaPolicy
-from rl_framework.agents import DQNAgent
+from rl_framework.rl2.agents import DQNAgent
 
 
 class BackendConfig(AppConfig):
@@ -19,6 +19,8 @@ class BackendConfig(AppConfig):
     def ready(self):
         input_layer = Input(shape=(1, NUM_MFCC, NO_features))
         rl.MODEL = get_model_9_rl(input_layer, 'live')
+        sl.MODEL = get_model_9_rl(input_layer, 'live')
+        sl.MODEL.compile(optimizer='adam', metrics=['mae', 'accuracy'])
         rl.DATASTORE = LiveDatastore(feature_type=FeatureType.MFCC)
         rl.ENV = LiveEnv(data_version=DataVersions.LIVE, datastore=rl.DATASTORE)
         rl.POLICY = ZetaPolicy(zeta_nb_steps=100000, eps=0.1)

@@ -1,4 +1,4 @@
-from rl_framework.util import *
+from rl_framework.rl2.util import *
 
 
 class Policy:

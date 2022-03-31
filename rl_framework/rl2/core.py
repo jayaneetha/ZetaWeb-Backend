@@ -4,7 +4,7 @@ from copy import deepcopy
 import numpy as np
 from tensorflow.keras.callbacks import History
 
-from rl_framework.callbacks import (
+from rl_framework.rl2.callbacks import (
     CallbackList,
     TestLogger,
     TrainEpisodeLogger,

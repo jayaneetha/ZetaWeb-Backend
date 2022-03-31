@@ -3,9 +3,9 @@ import warnings
 from tensorflow.keras.layers import Lambda, Input, Layer, Dense
 from tensorflow.python.keras.models import Model
 
-from rl_framework.core import Agent
-from rl_framework.policy import EpsGreedyQPolicy, GreedyQPolicy
-from rl_framework.util import *
+from rl_framework.rl2.core import Agent
+from rl_framework.rl2.policy import EpsGreedyQPolicy, GreedyQPolicy
+from rl_framework.rl2.util import *
 
 
 def mean_q(y_true, y_pred):

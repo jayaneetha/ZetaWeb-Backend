@@ -4,7 +4,6 @@ from copy import deepcopy
 
 import librosa
 import numpy as np
-import tensorflow as tf
 from django.core.files.storage import default_storage
 
 from Backend import rl
@@ -21,8 +20,6 @@ def store_file(file):
 
 
 def process_audio(file_url):
-    print("Tensorflow version:", tf.__version__)
-
     audio_id = str(uuid.uuid1())
 
     audio, sr = librosa.load(file_url, sr=SR)

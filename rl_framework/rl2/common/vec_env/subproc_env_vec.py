@@ -4,7 +4,7 @@ from multiprocessing import Process, Pipe
 
 import numpy as np
 
-from rl_framework.common.vec_env import VecEnv, CloudpickleWrapper
+from rl_framework.rl2.common.vec_env import VecEnv, CloudpickleWrapper
 
 
 def worker(remote, parent_remote, env_fn_wrapper):
