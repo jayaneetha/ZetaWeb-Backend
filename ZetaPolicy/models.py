@@ -1,8 +1,8 @@
-from tensorflow.keras import Model
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dropout, \
+from keras import Model
+from keras.layers import Conv2D, MaxPooling2D, Flatten, Dropout, \
     Dense, BatchNormalization, TimeDistributed, LSTM, concatenate
 
-from ZetaPolicy.constants import EMOTIONS
+from .constants import EMOTIONS
 
 
 # test
@@ -42,10 +42,10 @@ def get_model_9_2_multi_input(input_layers, model_name_prefix=''):
     c2 = Conv2D(3, kernel_size=4, padding='same', activation='relu')(mp1)
     mp2 = MaxPooling2D(strides=2)(c2)
 
-    # f1 = TimeDistributed(Flatten())(mp2)
-    # lstm = LSTM(32, return_sequences=True)(f1)
+    f1 = TimeDistributed(Flatten())(mp2)
+    lstm = LSTM(32, return_sequences=True)(f1)
 
-    f1 = Flatten()(mp2)
+    f1 = Flatten()(lstm)
 
     # emotion part
     emo_d1 = Dense(320, activation='relu')(f1)

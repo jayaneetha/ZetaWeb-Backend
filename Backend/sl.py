@@ -1,3 +1,3 @@
-from tensorflow.keras import Model
+from keras import Model
 
 MODEL: Model = None

@@ -1,6 +1,6 @@
 import numpy as np
 
-from rl_framework.policy import Policy
+from rl_framework.rl1.policy import Policy
 
 
 class ZetaPolicy(Policy):
