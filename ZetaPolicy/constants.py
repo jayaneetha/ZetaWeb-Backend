@@ -30,3 +30,4 @@ NO_features = 87  # sr22050&2sec
 # NO_features = 63  # sr16000&2sec
 # NO_features = 251  # sr16000&8sec
 WINDOW_LENGTH = 1
+SL_MODEL_FILENAME = 'mfcc_model_9.h5'
