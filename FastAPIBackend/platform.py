@@ -37,7 +37,7 @@ def initialize_platform():
 
 
 def _load_sl_model() -> Model:
-    model_file = f"./models/{SL_MODEL_FILENAME}"
+    model_file = f"./persistent_store/{SL_MODEL_FILENAME}"
 
     if exists(model_file):
         return tf.keras.models.load_model(model_file)

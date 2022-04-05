@@ -7,15 +7,19 @@ from pathlib import Path
 import librosa
 import numpy as np
 from fastapi import UploadFile
+from sqlalchemy.orm import Session
 
 from FastAPIBackend import memstore
+from FastAPIBackend.db import crud
+from FastAPIBackend.db.db_model import Feedback
+from FastAPIBackend.db.schemas import FeedbackItemCreate
 from ZetaPolicy.audio_utils import split_audio
 from ZetaPolicy.constants import SR, DURATION, NUM_MFCC, NO_features, EMOTIONS
 
 logger = logging.getLogger(__name__)
 
 
-def process_file(file: UploadFile):
+def process_file(file: UploadFile, db: Session):
     audio_id = str(uuid.uuid4())
     logger.info(f"audio id: {audio_id}")
 
@@ -32,6 +36,11 @@ def process_file(file: UploadFile):
     rl_emotion = EMOTIONS[np.argmax(rl_predictions)]
     sl_emotion = EMOTIONS[np.argmax(sl_predictions)]
 
+    feedback_item = FeedbackItemCreate(audio_id=audio_id, feedback=0.0, rl_emotion=rl_emotion, sl_emotion=sl_emotion)
+    crud.create_feedback_item(db=db, feedback_item=feedback_item)
+
+    memstore.STATE_STORE[audio_id] = mfcc
+
     return audio_id, rl_emotion, sl_emotion
 
 
@@ -43,3 +52,16 @@ def store_upload_file(file: UploadFile, filename: str):
     finally:
         file.file.close()
     return destination
+
+
+def add_feedback(audio_id: str, feedback: float, db: Session):
+    feedback_item: Feedback = crud.get_item(db=db, audio_id=audio_id)
+    feedback_item.feedback = feedback
+
+    memstore.MEMORY.append(observation=memstore.STATE_STORE[audio_id],
+                           action=feedback_item.rl_emotion, reward=feedback,
+                           terminal=False, training=True)
+
+    del memstore.STATE_STORE[audio_id]
+
+    return crud.update_feedback_item(db=db, feedback_item=feedback_item)
