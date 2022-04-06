@@ -25,12 +25,14 @@ def initialize_platform():
     memstore.POLICY = ZetaPolicy(zeta_nb_steps=100000, eps=0.1)
     memstore.AGENT = DQNAgent(model=memstore.RL_MODEL, nb_actions=memstore.ENV.action_space.n, memory=memstore.MEMORY,
                               policy=memstore.POLICY,
-                              nb_steps_warmup=10, gamma=.99, target_model_update=100,
+                              batch_size=4,
+                              nb_steps_warmup=3, gamma=.99, target_model_update=100,
                               train_interval=4, delta_clip=1.,
                               enable_double_dqn=False,
                               enable_dueling_network=False,
                               dueling_type='avg')
     memstore.AGENT.compile(optimizer='adam', metrics=['mae', 'accuracy'])
+    memstore.AGENT.set_training(training=True)
 
     memstore.SL_MODEL = _load_sl_model()
     logging.log(logging.INFO, "Platform Initialized")

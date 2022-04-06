@@ -1,3 +1,4 @@
+import numpy as np
 from tensorflow.keras import Model
 
 from ZetaPolicy.constants import WINDOW_LENGTH
@@ -15,4 +16,6 @@ MEMORY = SequentialMemory(limit=1000000, window_length=WINDOW_LENGTH)
 POLICY: Policy = None
 AGENT: Agent = None
 
-SL_MODEL: Model = None
+SL_MODEL: Model
+
+step = np.int16(0)

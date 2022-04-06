@@ -31,12 +31,14 @@ def process_file(file: UploadFile, db: Session):
     mfcc = deepcopy(mfcc)
 
     mfcc = mfcc.reshape(1, 1, NUM_MFCC, NO_features)
-    rl_predictions = memstore.RL_MODEL.predict([mfcc])
+    # rl_predictions = memstore.RL_MODEL.predict([mfcc])
+    rl_action = memstore.AGENT.forward(mfcc)
     sl_predictions = memstore.SL_MODEL.predict([mfcc])
-    rl_emotion = EMOTIONS[np.argmax(rl_predictions)]
+    rl_emotion = EMOTIONS[rl_action]
     sl_emotion = EMOTIONS[np.argmax(sl_predictions)]
 
-    feedback_item = FeedbackItemCreate(audio_id=audio_id, feedback=0.0, rl_emotion=rl_emotion, sl_emotion=sl_emotion)
+    feedback_item = FeedbackItemCreate(audio_id=audio_id, feedback=0.0, rl_emotion=rl_emotion, sl_emotion=sl_emotion,
+                                       original_filename=file.filename)
     crud.create_feedback_item(db=db, feedback_item=feedback_item)
 
     memstore.STATE_STORE[audio_id] = mfcc
@@ -54,14 +56,28 @@ def store_upload_file(file: UploadFile, filename: str):
     return destination
 
 
-def add_feedback(audio_id: str, feedback: float, db: Session):
+def add_feedback(audio_id: str, prev_audio_id: str, feedback: float, db: Session):
     feedback_item: Feedback = crud.get_item(db=db, audio_id=audio_id)
     feedback_item.feedback = feedback
+    feedback_item.prev_audio_id = prev_audio_id
 
-    memstore.MEMORY.append(observation=memstore.STATE_STORE[audio_id],
-                           action=feedback_item.rl_emotion, reward=feedback,
-                           terminal=False, training=True)
-
-    del memstore.STATE_STORE[audio_id]
+    memstore.AGENT.backward(feedback, False)
+    memstore.AGENT.step += 1
 
     return crud.update_feedback_item(db=db, feedback_item=feedback_item)
+
+
+def get_model_performance():
+    return [{
+        'episode': 0, 'rl': 0.45, 'sl': 0.56
+    }, {
+        'episode': 1, 'rl': 0.52, 'sl': 0.53
+    }, {
+        'episode': 2, 'rl': 0.64, 'sl': 0.54
+    }, {
+        'episode': 3, 'rl': 0.66, 'sl': 0.57
+    }, {
+        'episode': 4, 'rl': 0.72, 'sl': 0.56
+    }, {
+        'episode': 5, 'rl': 0.78, 'sl': 0.55
+    }]

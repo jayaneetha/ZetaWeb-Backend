@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class FeedbackItemBase(BaseModel):
     audio_id: str
+    original_filename: str
     feedback: float
     rl_emotion: str
     sl_emotion: str

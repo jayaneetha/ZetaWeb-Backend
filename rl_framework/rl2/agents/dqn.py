@@ -1,6 +1,6 @@
 import warnings
 
-from tensorflow.keras.layers import Lambda, Input, Layer, Dense
+from tensorflow.keras.layers import Lambda, Input, Dense
 from tensorflow.python.keras.models import Model
 
 from rl_framework.rl2.core import Agent
@@ -55,6 +55,7 @@ class AbstractDQNAgent(Agent):
         self.compiled = False
 
     def process_state_batch(self, batch):
+        return batch
         batch = np.array(batch, dtype=object)
         if self.processor is None:
             return batch
@@ -160,8 +161,7 @@ class DQNAgent(AbstractDQNAgent):
     def pre_train(self, x, y, epochs, batch_size=4, log_base_dir='./logs'):
         print(f"Pre Training for {epochs} epochs bs: {batch_size} storing logs: {log_base_dir}")
 
-        from framework import train
-
+        from ZetaPolicy.framework import train
         history, trained_model = train(model=self.model, x=x, y=y, epochs=epochs, batch_size=batch_size,
                                        log_base_dir=log_base_dir)
 
@@ -310,6 +310,8 @@ class DQNAgent(AbstractDQNAgent):
                 # Compute the q_values given state1, and extract the maximum for each sample in the batch.
                 # We perform this prediction on the target_model instead of the model for reasons
                 # outlined in Mnih (2015). In short: it makes the algorithm more stable.
+                state1_batch = np.concatenate(state1_batch, axis=0)
+                state1_batch = state1_batch.reshape((len(state1_batch), 1, 40, 87))
                 target_q_values = self.target_model.predict_on_batch(state1_batch)
                 assert target_q_values.shape == (self.batch_size, self.nb_actions)
                 q_batch = np.max(target_q_values, axis=1).flatten()
@@ -336,8 +338,8 @@ class DQNAgent(AbstractDQNAgent):
             # Finally, perform a single update on the entire batch. We use a dummy target since
             # the actual loss is computed in a Lambda layer that needs more complex input. However,
             # it is still useful to know the actual target to compute metrics properly.
-            ins = [state0_batch] if type(self.model.input) is not list else state0_batch
-            metrics = self.trainable_model.train_on_batch(ins + [targets, masks], [dummy_targets, targets])
+            # ins = [state0_batch] if type(self.model.input) is not list else state0_batch
+            metrics = self.trainable_model.train_on_batch([targets, masks], [dummy_targets, targets])
             metrics = [metric for idx, metric in enumerate(metrics) if
                        idx not in (1, 2)]  # throw away individual losses
             metrics += self.policy.metrics
@@ -384,378 +386,381 @@ class DQNAgent(AbstractDQNAgent):
         self.__test_policy = policy
         self.__test_policy._set_agent(self)
 
+    def set_training(self, training):
+        self.training = training
 
-class NAFLayer(Layer):
-    """Write me
-    """
-
-    def __init__(self, nb_actions, mode='full', **kwargs):
-        if mode not in ('full', 'diag'):
-            raise RuntimeError(f'Unknown mode "{self.mode}" in NAFLayer.')
-
-        self.nb_actions = nb_actions
-        self.mode = mode
-        super().__init__(**kwargs)
-
-    def call(self, x, mask=None):
-        # TODO: validate input shape
-
-        assert (len(x) == 3)
-        L_flat = x[0]
-        mu = x[1]
-        a = x[2]
-
-        if self.mode == 'full':
-            # Create L and L^T matrix, which we use to construct the positive-definite matrix P.
-            L = None
-            LT = None
-            if K.backend() == 'theano':
-                import theano.tensor as T
-                import theano
-
-                def fn(x, L_acc, LT_acc):
-                    x_ = K.zeros((self.nb_actions, self.nb_actions))
-                    x_ = T.set_subtensor(x_[np.tril_indices(self.nb_actions)], x)
-                    diag = K.exp(T.diag(x_)) + K.epsilon()
-                    x_ = T.set_subtensor(x_[np.diag_indices(self.nb_actions)], diag)
-                    return x_, x_.T
-
-                outputs_info = [
-                    K.zeros((self.nb_actions, self.nb_actions)),
-                    K.zeros((self.nb_actions, self.nb_actions)),
-                ]
-                results, _ = theano.scan(fn=fn, sequences=L_flat, outputs_info=outputs_info)
-                L, LT = results
-            elif K.backend() == 'tensorflow':
-                import tensorflow as tf
-
-                # Number of elements in a triangular matrix.
-                nb_elems = (self.nb_actions * self.nb_actions + self.nb_actions) // 2
-
-                # Create mask for the diagonal elements in L_flat. This is used to exponentiate
-                # only the diagonal elements, which is done before gathering.
-                diag_indeces = [0]
-                for row in range(1, self.nb_actions):
-                    diag_indeces.append(diag_indeces[-1] + (row + 1))
-                diag_mask = np.zeros(1 + nb_elems)  # +1 for the leading zero
-                diag_mask[np.array(diag_indeces) + 1] = 1
-                diag_mask = K.variable(diag_mask)
-
-                # Add leading zero element to each element in the L_flat. We use this zero
-                # element when gathering L_flat into a lower triangular matrix L.
-                nb_rows = tf.shape(L_flat)[0]
-                zeros = tf.expand_dims(tf.tile(K.zeros((1,)), [nb_rows]), 1)
-                try:
-                    # Old TF behavior.
-                    L_flat = tf.concat(1, [zeros, L_flat])
-                except (TypeError, ValueError):
-                    # New TF behavior
-                    L_flat = tf.concat([zeros, L_flat], 1)
-
-                # Create mask that can be used to gather elements from L_flat and put them
-                # into a lower triangular matrix.
-                tril_mask = np.zeros((self.nb_actions, self.nb_actions), dtype='int32')
-                tril_mask[np.tril_indices(self.nb_actions)] = range(1, nb_elems + 1)
-
-                # Finally, process each element of the batch.
-                init = [
-                    K.zeros((self.nb_actions, self.nb_actions)),
-                    K.zeros((self.nb_actions, self.nb_actions)),
-                ]
-
-                def fn(a, x):
-                    # Exponentiate everything. This is much easier than only exponentiating
-                    # the diagonal elements, and, usually, the action space is relatively low.
-                    x_ = K.exp(x) + K.epsilon()
-                    # Only keep the diagonal elements.
-                    x_ *= diag_mask
-                    # Add the original, non-diagonal elements.
-                    x_ += x * (1. - diag_mask)
-                    # Finally, gather everything into a lower triangular matrix.
-                    L_ = tf.gather(x_, tril_mask)
-                    return [L_, tf.transpose(L_)]
-
-                tmp = tf.scan(fn, L_flat, initializer=init)
-                if isinstance(tmp, (list, tuple)):
-                    # TensorFlow 0.10 now returns a tuple of tensors.
-                    L, LT = tmp
-                else:
-                    # Old TensorFlow < 0.10 returns a shared tensor.
-                    L = tmp[:, 0, :, :]
-                    LT = tmp[:, 1, :, :]
-            else:
-                raise RuntimeError(f'Unknown Keras backend "{K.backend()}".')
-            assert L is not None
-            assert LT is not None
-            P = K.batch_dot(L, LT)
-        elif self.mode == 'diag':
-            if K.backend() == 'theano':
-                import theano.tensor as T
-                import theano
-
-                def fn(x, P_acc):
-                    x_ = K.zeros((self.nb_actions, self.nb_actions))
-                    x_ = T.set_subtensor(x_[np.diag_indices(self.nb_actions)], x)
-                    return x_
-
-                outputs_info = [
-                    K.zeros((self.nb_actions, self.nb_actions)),
-                ]
-                P, _ = theano.scan(fn=fn, sequences=L_flat, outputs_info=outputs_info)
-            elif K.backend() == 'tensorflow':
-                import tensorflow as tf
-
-                # Create mask that can be used to gather elements from L_flat and put them
-                # into a diagonal matrix.
-                diag_mask = np.zeros((self.nb_actions, self.nb_actions), dtype='int32')
-                diag_mask[np.diag_indices(self.nb_actions)] = range(1, self.nb_actions + 1)
-
-                # Add leading zero element to each element in the L_flat. We use this zero
-                # element when gathering L_flat into a lower triangular matrix L.
-                nb_rows = tf.shape(L_flat)[0]
-                zeros = tf.expand_dims(tf.tile(K.zeros((1,)), [nb_rows]), 1)
-                try:
-                    # Old TF behavior.
-                    L_flat = tf.concat(1, [zeros, L_flat])
-                except (TypeError, ValueError):
-                    # New TF behavior
-                    L_flat = tf.concat([zeros, L_flat], 1)
-
-                # Finally, process each element of the batch.
-                def fn(a, x):
-                    x_ = tf.gather(x, diag_mask)
-                    return x_
-
-                P = tf.scan(fn, L_flat, initializer=K.zeros((self.nb_actions, self.nb_actions)))
-            else:
-                raise RuntimeError(f'Unknown Keras backend "{K.backend()}".')
-        assert P is not None
-        assert K.ndim(P) == 3
-
-        # Combine a, mu and P into a scalar (over the batches). What we compute here is
-        # -.5 * (a - mu)^T * P * (a - mu), where * denotes the dot-product. Unfortunately
-        # TensorFlow handles vector * P slightly suboptimal, hence we convert the vectors to
-        # 1xd/dx1 matrices and finally flatten the resulting 1x1 matrix into a scalar. All
-        # operations happen over the batch size, which is dimension 0.
-        prod = K.batch_dot(K.expand_dims(a - mu, 1), P)
-        prod = K.batch_dot(prod, K.expand_dims(a - mu, -1))
-        A = -.5 * K.batch_flatten(prod)
-        assert K.ndim(A) == 2
-        return A
-
-    def get_output_shape_for(self, input_shape):
-        return self.compute_output_shape(input_shape)
-
-    def compute_output_shape(self, input_shape):
-        if len(input_shape) != 3:
-            raise RuntimeError("Expects 3 inputs: L, mu, a")
-        for i, shape in enumerate(input_shape):
-            if len(shape) != 2:
-                raise RuntimeError(f"Input {i} has {len(shape)} dimensions but should have 2")
-        assert self.mode in ('full', 'diag')
-        if self.mode == 'full':
-            expected_elements = (self.nb_actions * self.nb_actions + self.nb_actions) // 2
-        elif self.mode == 'diag':
-            expected_elements = self.nb_actions
-        else:
-            expected_elements = None
-        assert expected_elements is not None
-        if input_shape[0][1] != expected_elements:
-            raise RuntimeError("Input 0 (L) should have {} elements but has {}".format(input_shape[0][1]))
-        if input_shape[1][1] != self.nb_actions:
-            raise RuntimeError(
-                f"Input 1 (mu) should have {self.nb_actions} elements but has {input_shape[1][1]}")
-        if input_shape[2][1] != self.nb_actions:
-            raise RuntimeError(
-                f"Input 2 (action) should have {self.nb_actions} elements but has {input_shape[1][1]}")
-        return input_shape[0][0], 1
-
-
-class NAFAgent(AbstractDQNAgent):
-    """Write me
-    """
-
-    def __init__(self, V_model, L_model, mu_model, random_process=None,
-                 covariance_mode='full', *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # TODO: Validate (important) input.
-
-        # Parameters.
-        self.random_process = random_process
-        self.covariance_mode = covariance_mode
-
-        # Related objects.
-        self.V_model = V_model
-        self.L_model = L_model
-        self.mu_model = mu_model
-
-        # State.
-        self.reset_states()
-
-    def update_target_model_hard(self):
-        self.target_V_model.set_weights(self.V_model.get_weights())
-
-    def load_weights(self, filepath):
-        self.combined_model.load_weights(filepath)  # updates V, L and mu model since the weights are shared
-        self.update_target_model_hard()
-
-    def save_weights(self, filepath, overwrite=False):
-        self.combined_model.save_weights(filepath, overwrite=overwrite)
-
-    def reset_states(self):
-        if self.random_process is not None:
-            self.random_process.reset_states()
-        self.recent_action = None
-        self.recent_observation = None
-        if self.compiled:
-            self.combined_model.reset_states()
-            self.target_V_model.reset_states()
-
-    def compile(self, optimizer, metrics=[]):
-        metrics += [mean_q]  # register default metrics
-
-        # Create target V model. We don't need targets for mu or L.
-        self.target_V_model = clone_model(self.V_model, self.custom_model_objects)
-        self.target_V_model.compile(optimizer='sgd', loss='mse')
-
-        # Build combined model.
-        a_in = Input(shape=(self.nb_actions,), name='action_input')
-        if type(self.V_model.input) is list:
-            observation_shapes = [i.shape[1:] for i in self.V_model.input]
-        else:
-            observation_shapes = [self.V_model.input.shape[1:]]
-        os_in = [Input(shape=shape, name=f'observation_input_{idx}') for idx, shape in enumerate(observation_shapes)]
-        L_out = self.L_model([a_in] + os_in)
-        V_out = self.V_model(os_in)
-
-        mu_out = self.mu_model(os_in)
-        A_out = NAFLayer(self.nb_actions, mode=self.covariance_mode)([L_out, mu_out, a_in])
-        combined_out = Lambda(lambda x: x[0] + x[1], output_shape=lambda x: x[0])([A_out, V_out])
-        combined = Model(inputs=[a_in] + os_in, outputs=[combined_out])
-        # Compile combined model.
-        if self.target_model_update < 1.:
-            # We use the `AdditionalUpdatesOptimizer` to efficiently soft-update the target model.
-            updates = get_soft_target_model_updates(self.target_V_model, self.V_model, self.target_model_update)
-            optimizer = AdditionalUpdatesOptimizer(optimizer, updates)
-
-        def clipped_error(y_true, y_pred):
-            return K.mean(huber_loss(y_true, y_pred, self.delta_clip), axis=-1)
-
-        combined.compile(loss=clipped_error, optimizer=optimizer, metrics=metrics)
-        self.combined_model = combined
-
-        self.compiled = True
-
-    def select_action(self, state):
-        batch = self.process_state_batch([state])
-        action = self.mu_model.predict_on_batch(batch).flatten()
-        assert action.shape == (self.nb_actions,)
-
-        # Apply noise, if a random process is set.
-        if self.training and self.random_process is not None:
-            noise = self.random_process.sample()
-            assert noise.shape == action.shape
-            action += noise
-
-        return action
-
-    def forward(self, observation):
-        # Select an action.
-        state = self.memory.get_recent_state(observation)
-        action = self.select_action(state)
-
-        # Book-keeping.
-        self.recent_observation = observation
-        self.recent_action = action
-
-        return action
-
-    def backward(self, reward, terminal):
-        # Store most recent experience in memory.
-        if self.step % self.memory_interval == 0:
-            self.memory.append(self.recent_observation, self.recent_action, reward, terminal,
-                               training=self.training)
-
-        metrics = [np.nan for _ in self.metrics_names]
-        if not self.training:
-            # We're done here. No need to update the experience memory since we only use the working
-            # memory to obtain the state over the most recent observations.
-            return metrics
-
-        # Train the network on a single stochastic batch.
-        if self.step > self.nb_steps_warmup and self.step % self.train_interval == 0:
-            experiences = self.memory.sample(self.batch_size)
-            assert len(experiences) == self.batch_size
-
-            # Start by extracting the necessary parameters (we use a vectorized implementation).
-            state0_batch = []
-            reward_batch = []
-            action_batch = []
-            terminal1_batch = []
-            state1_batch = []
-            for e in experiences:
-                state0_batch.append(e.state0)
-                state1_batch.append(e.state1)
-                reward_batch.append(e.reward)
-                action_batch.append(e.action)
-                terminal1_batch.append(0. if e.terminal1 else 1.)
-
-            # Prepare and validate parameters.
-            state0_batch = self.process_state_batch(state0_batch)
-            state1_batch = self.process_state_batch(state1_batch)
-            terminal1_batch = np.array(terminal1_batch)
-            reward_batch = np.array(reward_batch)
-            action_batch = np.array(action_batch)
-            assert reward_batch.shape == (self.batch_size,)
-            assert terminal1_batch.shape == reward_batch.shape
-            assert action_batch.shape == (self.batch_size, self.nb_actions)
-
-            # Compute Q values for mini-batch update.
-            q_batch = self.target_V_model.predict_on_batch(state1_batch).flatten()
-            assert q_batch.shape == (self.batch_size,)
-
-            # Compute discounted reward.
-            discounted_reward_batch = self.gamma * q_batch
-            # Set discounted reward to zero for all states that were terminal.
-            discounted_reward_batch *= terminal1_batch
-            assert discounted_reward_batch.shape == reward_batch.shape
-            Rs = reward_batch + discounted_reward_batch
-            assert Rs.shape == (self.batch_size,)
-
-            # Finally, perform a single update on the entire batch.
-            if len(self.combined_model.input) == 2:
-                metrics = self.combined_model.train_on_batch([action_batch, state0_batch], Rs)
-            else:
-                metrics = self.combined_model.train_on_batch([action_batch] + state0_batch, Rs)
-            if self.processor is not None:
-                metrics += self.processor.metrics
-
-        if self.target_model_update >= 1 and self.step % self.target_model_update == 0:
-            self.update_target_model_hard()
-
-        return metrics
-
-    @property
-    def layers(self):
-        return self.combined_model.layers[:]
-
-    def get_config(self):
-        config = super().get_config()
-        config['V_model'] = get_object_config(self.V_model)
-        config['mu_model'] = get_object_config(self.mu_model)
-        config['L_model'] = get_object_config(self.L_model)
-        if self.compiled:
-            config['target_V_model'] = get_object_config(self.target_V_model)
-        return config
-
-    @property
-    def metrics_names(self):
-        names = self.combined_model.metrics_names[:]
-        if self.processor is not None:
-            names += self.processor.metrics_names[:]
-        return names
+#
+# class NAFLayer(Layer):
+#     """Write me
+#     """
+#
+#     def __init__(self, nb_actions, mode='full', **kwargs):
+#         if mode not in ('full', 'diag'):
+#             raise RuntimeError(f'Unknown mode "{self.mode}" in NAFLayer.')
+#
+#         self.nb_actions = nb_actions
+#         self.mode = mode
+#         super().__init__(**kwargs)
+#
+#     def call(self, x, mask=None):
+#         # TODO: validate input shape
+#
+#         assert (len(x) == 3)
+#         L_flat = x[0]
+#         mu = x[1]
+#         a = x[2]
+#
+#         if self.mode == 'full':
+#             # Create L and L^T matrix, which we use to construct the positive-definite matrix P.
+#             L = None
+#             LT = None
+#             if K.backend() == 'theano':
+#                 import theano.tensor as T
+#                 import theano
+#
+#                 def fn(x, L_acc, LT_acc):
+#                     x_ = K.zeros((self.nb_actions, self.nb_actions))
+#                     x_ = T.set_subtensor(x_[np.tril_indices(self.nb_actions)], x)
+#                     diag = K.exp(T.diag(x_)) + K.epsilon()
+#                     x_ = T.set_subtensor(x_[np.diag_indices(self.nb_actions)], diag)
+#                     return x_, x_.T
+#
+#                 outputs_info = [
+#                     K.zeros((self.nb_actions, self.nb_actions)),
+#                     K.zeros((self.nb_actions, self.nb_actions)),
+#                 ]
+#                 results, _ = theano.scan(fn=fn, sequences=L_flat, outputs_info=outputs_info)
+#                 L, LT = results
+#             elif K.backend() == 'tensorflow':
+#                 import tensorflow as tf
+#
+#                 # Number of elements in a triangular matrix.
+#                 nb_elems = (self.nb_actions * self.nb_actions + self.nb_actions) // 2
+#
+#                 # Create mask for the diagonal elements in L_flat. This is used to exponentiate
+#                 # only the diagonal elements, which is done before gathering.
+#                 diag_indeces = [0]
+#                 for row in range(1, self.nb_actions):
+#                     diag_indeces.append(diag_indeces[-1] + (row + 1))
+#                 diag_mask = np.zeros(1 + nb_elems)  # +1 for the leading zero
+#                 diag_mask[np.array(diag_indeces) + 1] = 1
+#                 diag_mask = K.variable(diag_mask)
+#
+#                 # Add leading zero element to each element in the L_flat. We use this zero
+#                 # element when gathering L_flat into a lower triangular matrix L.
+#                 nb_rows = tf.shape(L_flat)[0]
+#                 zeros = tf.expand_dims(tf.tile(K.zeros((1,)), [nb_rows]), 1)
+#                 try:
+#                     # Old TF behavior.
+#                     L_flat = tf.concat(1, [zeros, L_flat])
+#                 except (TypeError, ValueError):
+#                     # New TF behavior
+#                     L_flat = tf.concat([zeros, L_flat], 1)
+#
+#                 # Create mask that can be used to gather elements from L_flat and put them
+#                 # into a lower triangular matrix.
+#                 tril_mask = np.zeros((self.nb_actions, self.nb_actions), dtype='int32')
+#                 tril_mask[np.tril_indices(self.nb_actions)] = range(1, nb_elems + 1)
+#
+#                 # Finally, process each element of the batch.
+#                 init = [
+#                     K.zeros((self.nb_actions, self.nb_actions)),
+#                     K.zeros((self.nb_actions, self.nb_actions)),
+#                 ]
+#
+#                 def fn(a, x):
+#                     # Exponentiate everything. This is much easier than only exponentiating
+#                     # the diagonal elements, and, usually, the action space is relatively low.
+#                     x_ = K.exp(x) + K.epsilon()
+#                     # Only keep the diagonal elements.
+#                     x_ *= diag_mask
+#                     # Add the original, non-diagonal elements.
+#                     x_ += x * (1. - diag_mask)
+#                     # Finally, gather everything into a lower triangular matrix.
+#                     L_ = tf.gather(x_, tril_mask)
+#                     return [L_, tf.transpose(L_)]
+#
+#                 tmp = tf.scan(fn, L_flat, initializer=init)
+#                 if isinstance(tmp, (list, tuple)):
+#                     # TensorFlow 0.10 now returns a tuple of tensors.
+#                     L, LT = tmp
+#                 else:
+#                     # Old TensorFlow < 0.10 returns a shared tensor.
+#                     L = tmp[:, 0, :, :]
+#                     LT = tmp[:, 1, :, :]
+#             else:
+#                 raise RuntimeError(f'Unknown Keras backend "{K.backend()}".')
+#             assert L is not None
+#             assert LT is not None
+#             P = K.batch_dot(L, LT)
+#         elif self.mode == 'diag':
+#             if K.backend() == 'theano':
+#                 import theano.tensor as T
+#                 import theano
+#
+#                 def fn(x, P_acc):
+#                     x_ = K.zeros((self.nb_actions, self.nb_actions))
+#                     x_ = T.set_subtensor(x_[np.diag_indices(self.nb_actions)], x)
+#                     return x_
+#
+#                 outputs_info = [
+#                     K.zeros((self.nb_actions, self.nb_actions)),
+#                 ]
+#                 P, _ = theano.scan(fn=fn, sequences=L_flat, outputs_info=outputs_info)
+#             elif K.backend() == 'tensorflow':
+#                 import tensorflow as tf
+#
+#                 # Create mask that can be used to gather elements from L_flat and put them
+#                 # into a diagonal matrix.
+#                 diag_mask = np.zeros((self.nb_actions, self.nb_actions), dtype='int32')
+#                 diag_mask[np.diag_indices(self.nb_actions)] = range(1, self.nb_actions + 1)
+#
+#                 # Add leading zero element to each element in the L_flat. We use this zero
+#                 # element when gathering L_flat into a lower triangular matrix L.
+#                 nb_rows = tf.shape(L_flat)[0]
+#                 zeros = tf.expand_dims(tf.tile(K.zeros((1,)), [nb_rows]), 1)
+#                 try:
+#                     # Old TF behavior.
+#                     L_flat = tf.concat(1, [zeros, L_flat])
+#                 except (TypeError, ValueError):
+#                     # New TF behavior
+#                     L_flat = tf.concat([zeros, L_flat], 1)
+#
+#                 # Finally, process each element of the batch.
+#                 def fn(a, x):
+#                     x_ = tf.gather(x, diag_mask)
+#                     return x_
+#
+#                 P = tf.scan(fn, L_flat, initializer=K.zeros((self.nb_actions, self.nb_actions)))
+#             else:
+#                 raise RuntimeError(f'Unknown Keras backend "{K.backend()}".')
+#         assert P is not None
+#         assert K.ndim(P) == 3
+#
+#         # Combine a, mu and P into a scalar (over the batches). What we compute here is
+#         # -.5 * (a - mu)^T * P * (a - mu), where * denotes the dot-product. Unfortunately
+#         # TensorFlow handles vector * P slightly suboptimal, hence we convert the vectors to
+#         # 1xd/dx1 matrices and finally flatten the resulting 1x1 matrix into a scalar. All
+#         # operations happen over the batch size, which is dimension 0.
+#         prod = K.batch_dot(K.expand_dims(a - mu, 1), P)
+#         prod = K.batch_dot(prod, K.expand_dims(a - mu, -1))
+#         A = -.5 * K.batch_flatten(prod)
+#         assert K.ndim(A) == 2
+#         return A
+#
+#     def get_output_shape_for(self, input_shape):
+#         return self.compute_output_shape(input_shape)
+#
+#     def compute_output_shape(self, input_shape):
+#         if len(input_shape) != 3:
+#             raise RuntimeError("Expects 3 inputs: L, mu, a")
+#         for i, shape in enumerate(input_shape):
+#             if len(shape) != 2:
+#                 raise RuntimeError(f"Input {i} has {len(shape)} dimensions but should have 2")
+#         assert self.mode in ('full', 'diag')
+#         if self.mode == 'full':
+#             expected_elements = (self.nb_actions * self.nb_actions + self.nb_actions) // 2
+#         elif self.mode == 'diag':
+#             expected_elements = self.nb_actions
+#         else:
+#             expected_elements = None
+#         assert expected_elements is not None
+#         if input_shape[0][1] != expected_elements:
+#             raise RuntimeError("Input 0 (L) should have {} elements but has {}".format(input_shape[0][1]))
+#         if input_shape[1][1] != self.nb_actions:
+#             raise RuntimeError(
+#                 f"Input 1 (mu) should have {self.nb_actions} elements but has {input_shape[1][1]}")
+#         if input_shape[2][1] != self.nb_actions:
+#             raise RuntimeError(
+#                 f"Input 2 (action) should have {self.nb_actions} elements but has {input_shape[1][1]}")
+#         return input_shape[0][0], 1
+#
+#
+# class NAFAgent(AbstractDQNAgent):
+#     """Write me
+#     """
+#
+#     def __init__(self, V_model, L_model, mu_model, random_process=None,
+#                  covariance_mode='full', *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#
+#         # TODO: Validate (important) input.
+#
+#         # Parameters.
+#         self.random_process = random_process
+#         self.covariance_mode = covariance_mode
+#
+#         # Related objects.
+#         self.V_model = V_model
+#         self.L_model = L_model
+#         self.mu_model = mu_model
+#
+#         # State.
+#         self.reset_states()
+#
+#     def update_target_model_hard(self):
+#         self.target_V_model.set_weights(self.V_model.get_weights())
+#
+#     def load_weights(self, filepath):
+#         self.combined_model.load_weights(filepath)  # updates V, L and mu model since the weights are shared
+#         self.update_target_model_hard()
+#
+#     def save_weights(self, filepath, overwrite=False):
+#         self.combined_model.save_weights(filepath, overwrite=overwrite)
+#
+#     def reset_states(self):
+#         if self.random_process is not None:
+#             self.random_process.reset_states()
+#         self.recent_action = None
+#         self.recent_observation = None
+#         if self.compiled:
+#             self.combined_model.reset_states()
+#             self.target_V_model.reset_states()
+#
+#     def compile(self, optimizer, metrics=[]):
+#         metrics += [mean_q]  # register default metrics
+#
+#         # Create target V model. We don't need targets for mu or L.
+#         self.target_V_model = clone_model(self.V_model, self.custom_model_objects)
+#         self.target_V_model.compile(optimizer='sgd', loss='mse')
+#
+#         # Build combined model.
+#         a_in = Input(shape=(self.nb_actions,), name='action_input')
+#         if type(self.V_model.input) is list:
+#             observation_shapes = [i.shape[1:] for i in self.V_model.input]
+#         else:
+#             observation_shapes = [self.V_model.input.shape[1:]]
+#         os_in = [Input(shape=shape, name=f'observation_input_{idx}') for idx, shape in enumerate(observation_shapes)]
+#         L_out = self.L_model([a_in] + os_in)
+#         V_out = self.V_model(os_in)
+#
+#         mu_out = self.mu_model(os_in)
+#         A_out = NAFLayer(self.nb_actions, mode=self.covariance_mode)([L_out, mu_out, a_in])
+#         combined_out = Lambda(lambda x: x[0] + x[1], output_shape=lambda x: x[0])([A_out, V_out])
+#         combined = Model(inputs=[a_in] + os_in, outputs=[combined_out])
+#         # Compile combined model.
+#         if self.target_model_update < 1.:
+#             # We use the `AdditionalUpdatesOptimizer` to efficiently soft-update the target model.
+#             updates = get_soft_target_model_updates(self.target_V_model, self.V_model, self.target_model_update)
+#             optimizer = AdditionalUpdatesOptimizer(optimizer, updates)
+#
+#         def clipped_error(y_true, y_pred):
+#             return K.mean(huber_loss(y_true, y_pred, self.delta_clip), axis=-1)
+#
+#         combined.compile(loss=clipped_error, optimizer=optimizer, metrics=metrics)
+#         self.combined_model = combined
+#
+#         self.compiled = True
+#
+#     def select_action(self, state):
+#         batch = self.process_state_batch([state])
+#         action = self.mu_model.predict_on_batch(batch).flatten()
+#         assert action.shape == (self.nb_actions,)
+#
+#         # Apply noise, if a random process is set.
+#         if self.training and self.random_process is not None:
+#             noise = self.random_process.sample()
+#             assert noise.shape == action.shape
+#             action += noise
+#
+#         return action
+#
+#     def forward(self, observation):
+#         # Select an action.
+#         state = self.memory.get_recent_state(observation)
+#         action = self.select_action(state)
+#
+#         # Book-keeping.
+#         self.recent_observation = observation
+#         self.recent_action = action
+#
+#         return action
+#
+#     def backward(self, reward, terminal):
+#         # Store most recent experience in memory.
+#         if self.step % self.memory_interval == 0:
+#             self.memory.append(self.recent_observation, self.recent_action, reward, terminal,
+#                                training=self.training)
+#
+#         metrics = [np.nan for _ in self.metrics_names]
+#         if not self.training:
+#             # We're done here. No need to update the experience memory since we only use the working
+#             # memory to obtain the state over the most recent observations.
+#             return metrics
+#
+#         # Train the network on a single stochastic batch.
+#         if self.step > self.nb_steps_warmup and self.step % self.train_interval == 0:
+#             experiences = self.memory.sample(self.batch_size)
+#             assert len(experiences) == self.batch_size
+#
+#             # Start by extracting the necessary parameters (we use a vectorized implementation).
+#             state0_batch = []
+#             reward_batch = []
+#             action_batch = []
+#             terminal1_batch = []
+#             state1_batch = []
+#             for e in experiences:
+#                 state0_batch.append(e.state0)
+#                 state1_batch.append(e.state1)
+#                 reward_batch.append(e.reward)
+#                 action_batch.append(e.action)
+#                 terminal1_batch.append(0. if e.terminal1 else 1.)
+#
+#             # Prepare and validate parameters.
+#             state0_batch = self.process_state_batch(state0_batch)
+#             state1_batch = self.process_state_batch(state1_batch)
+#             terminal1_batch = np.array(terminal1_batch)
+#             reward_batch = np.array(reward_batch)
+#             action_batch = np.array(action_batch)
+#             assert reward_batch.shape == (self.batch_size,)
+#             assert terminal1_batch.shape == reward_batch.shape
+#             assert action_batch.shape == (self.batch_size, self.nb_actions)
+#
+#             # Compute Q values for mini-batch update.
+#             q_batch = self.target_V_model.predict_on_batch(state1_batch).flatten()
+#             assert q_batch.shape == (self.batch_size,)
+#
+#             # Compute discounted reward.
+#             discounted_reward_batch = self.gamma * q_batch
+#             # Set discounted reward to zero for all states that were terminal.
+#             discounted_reward_batch *= terminal1_batch
+#             assert discounted_reward_batch.shape == reward_batch.shape
+#             Rs = reward_batch + discounted_reward_batch
+#             assert Rs.shape == (self.batch_size,)
+#
+#             # Finally, perform a single update on the entire batch.
+#             if len(self.combined_model.input) == 2:
+#                 metrics = self.combined_model.train_on_batch([action_batch, state0_batch], Rs)
+#             else:
+#                 metrics = self.combined_model.train_on_batch([action_batch] + state0_batch, Rs)
+#             if self.processor is not None:
+#                 metrics += self.processor.metrics
+#
+#         if self.target_model_update >= 1 and self.step % self.target_model_update == 0:
+#             self.update_target_model_hard()
+#
+#         return metrics
+#
+#     @property
+#     def layers(self):
+#         return self.combined_model.layers[:]
+#
+#     def get_config(self):
+#         config = super().get_config()
+#         config['V_model'] = get_object_config(self.V_model)
+#         config['mu_model'] = get_object_config(self.mu_model)
+#         config['L_model'] = get_object_config(self.L_model)
+#         if self.compiled:
+#             config['target_V_model'] = get_object_config(self.target_V_model)
+#         return config
+#
+#     @property
+#     def metrics_names(self):
+#         names = self.combined_model.metrics_names[:]
+#         if self.processor is not None:
+#             names += self.processor.metrics_names[:]
+#         return names
 
 
 # Aliases
-ContinuousDQNAgent = NAFAgent
+# ContinuousDQNAgent = NAFAgent

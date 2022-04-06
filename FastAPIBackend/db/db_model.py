@@ -7,6 +7,7 @@ class Feedback(Base):
     __tablename__ = "feedbacks"
     id = Column(Integer, primary_key=True, index=True)
     audio_id = Column(String, index=True)
+    original_filename = Column(String)
     feedback = Column(Float, default=0.0)
     rl_emotion = Column(String)
     sl_emotion = Column(String)
