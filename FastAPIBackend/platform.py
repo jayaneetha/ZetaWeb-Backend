@@ -26,7 +26,7 @@ def initialize_platform():
     memstore.AGENT = DQNAgent(model=memstore.RL_MODEL, nb_actions=memstore.ENV.action_space.n, memory=memstore.MEMORY,
                               policy=memstore.POLICY,
                               batch_size=4,
-                              nb_steps_warmup=3, gamma=.99, target_model_update=100,
+                              nb_steps_warmup=15, gamma=.99, target_model_update=100,
                               train_interval=4, delta_clip=1.,
                               enable_double_dqn=False,
                               enable_dueling_network=False,

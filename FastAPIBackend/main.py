@@ -46,8 +46,8 @@ def create_upload_file(audioFile: UploadFile, db: Session = Depends(get_db)):
 
 
 @app.post("/feedback")
-def add_feedback(audio_id: str, feedback: float, db: Session = Depends(get_db)):
-    feedback_item = service.add_feedback(audio_id, "", feedback, db)
+def add_feedback(audio_id: str, feedback: bool, model: str, db: Session = Depends(get_db)):
+    feedback_item = service.add_feedback(audio_id, model, feedback, db)
     return {'feedback': feedback_item}
 
 
@@ -57,12 +57,6 @@ def read_items(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return items
 
 
-@app.get("/update")
-def update_rl_agent(db: Session = Depends(get_db)):
-    service.update_agent()
-    return {'result': "done"}
-
-
 @app.get("/performance")
-def get_model_performance():
-    return service.get_model_performance()
+def get_model_performance(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return service.get_model_performance(skip, limit, db)

@@ -1,3 +1,4 @@
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from FastAPIBackend.db import db_model, schemas
@@ -25,3 +26,7 @@ def update_feedback_item(db: Session, feedback_item: Feedback):
     db.commit()
     db.refresh(feedback_item)
     return feedback_item
+
+
+def get_accuracies(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(db_model.Accuracies).order_by(desc(db_model.Accuracies.episode)).offset(skip).limit(limit).all()

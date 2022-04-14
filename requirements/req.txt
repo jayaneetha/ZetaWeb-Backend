@@ -1,6 +1,5 @@
 gym==0.21.0
 h5py==2.10.0
-hdf5==1.12.1
 librosa==0.9.1
 libsndfile==1.0.31
 matplotlib==3.5.1

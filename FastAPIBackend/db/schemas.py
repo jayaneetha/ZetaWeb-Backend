@@ -1,10 +1,13 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
 class FeedbackItemBase(BaseModel):
     audio_id: str
     original_filename: str
-    feedback: float
+    rl_feedback: Optional[bool]
+    sl_feedback: Optional[bool]
     rl_emotion: str
     sl_emotion: str
 

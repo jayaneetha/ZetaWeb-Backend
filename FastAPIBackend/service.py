@@ -31,13 +31,14 @@ def process_file(file: UploadFile, db: Session):
     mfcc = deepcopy(mfcc)
 
     mfcc = mfcc.reshape(1, 1, NUM_MFCC, NO_features)
-    # rl_predictions = memstore.RL_MODEL.predict([mfcc])
+
     rl_action = memstore.AGENT.forward(mfcc)
+
     sl_predictions = memstore.SL_MODEL.predict([mfcc])
     rl_emotion = EMOTIONS[rl_action]
     sl_emotion = EMOTIONS[np.argmax(sl_predictions)]
 
-    feedback_item = FeedbackItemCreate(audio_id=audio_id, feedback=0.0, rl_emotion=rl_emotion, sl_emotion=sl_emotion,
+    feedback_item = FeedbackItemCreate(audio_id=audio_id, rl_emotion=rl_emotion, sl_emotion=sl_emotion,
                                        original_filename=file.filename)
     crud.create_feedback_item(db=db, feedback_item=feedback_item)
 
@@ -56,28 +57,30 @@ def store_upload_file(file: UploadFile, filename: str):
     return destination
 
 
-def add_feedback(audio_id: str, prev_audio_id: str, feedback: float, db: Session):
-    feedback_item: Feedback = crud.get_item(db=db, audio_id=audio_id)
-    feedback_item.feedback = feedback
-    feedback_item.prev_audio_id = prev_audio_id
+def add_feedback(audio_id: str, model: str, feedback: bool, db: Session):
+    model = model.upper()
+    if model == 'RL' or model == 'SL':
+        feedback_item: Feedback = crud.get_item(db=db, audio_id=audio_id)
 
-    memstore.AGENT.backward(feedback, False)
-    memstore.AGENT.step += 1
+        if feedback_item is not None:
+            if model == 'RL':
+                feedback_item.rl_feedback = feedback
 
-    return crud.update_feedback_item(db=db, feedback_item=feedback_item)
+            if model == 'SL':
+                feedback_item.sl_feedback = feedback
+
+            memstore.AGENT.backward(feedback, False)
+            memstore.AGENT.step += 1
+
+            return crud.update_feedback_item(db=db, feedback_item=feedback_item)
+        else:
+            logger.error(f"Invalid audio id value: {audio_id}")
+            raise RuntimeError(f"Invalid audio id value: {audio_id}")
+    else:
+        logger.error(f"Invalid model value: {model}")
+        raise RuntimeError(f"Invalid model value: {model}")
 
 
-def get_model_performance():
-    return [{
-        'episode': 0, 'rl': 0.45, 'sl': 0.56
-    }, {
-        'episode': 1, 'rl': 0.52, 'sl': 0.53
-    }, {
-        'episode': 2, 'rl': 0.64, 'sl': 0.54
-    }, {
-        'episode': 3, 'rl': 0.66, 'sl': 0.57
-    }, {
-        'episode': 4, 'rl': 0.72, 'sl': 0.56
-    }, {
-        'episode': 5, 'rl': 0.78, 'sl': 0.55
-    }]
+def get_model_performance(skip: int, limit: int, db: Session) -> list:
+    acc = crud.get_accuracies(db, skip, limit)
+    return acc
