@@ -1,4 +1,5 @@
 import logging
+from logging import config
 from typing import List
 
 from fastapi import FastAPI, Depends
@@ -11,9 +12,9 @@ from FastAPIBackend.db import db_model, crud, schemas
 from FastAPIBackend.db.database import engine, SessionLocal
 from FastAPIBackend.platform import initialize_platform
 
-logging.config.fileConfig('logging.conf', disable_existing_loggers=False)
+# config.fileConfig('logging.conf', disable_existing_loggers=False)
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
 
 db_model.Base.metadata.create_all(bind=engine)
 

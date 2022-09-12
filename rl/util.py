@@ -1,7 +1,9 @@
 import numpy as np
-import tensorflow.keras.backend as K
+
+from tensorflow.keras.models import model_from_config, Sequential, Model, model_from_config
 import tensorflow.keras.optimizers as optimizers
-from tensorflow.keras.models import model_from_config
+import tensorflow.keras.backend as K
+import tensorflow as tf
 
 
 def clone_model(model, custom_objects={}):
@@ -76,6 +78,7 @@ def huber_loss(y_true, y_pred, clip_value):
         return tf.select(condition, squared_loss, linear_loss)  # condition, true, false
     else:
         return tf.where(condition, squared_loss, linear_loss)  # condition, true, false
+
 
 
 class AdditionalUpdatesOptimizer(optimizers.Optimizer):

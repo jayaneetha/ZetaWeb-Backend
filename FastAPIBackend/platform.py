@@ -2,8 +2,8 @@ import logging
 from os.path import exists
 
 import tensorflow as tf
-from tensorflow.keras import Input
-from tensorflow.keras import Model
+from keras import Input
+from keras import Model
 
 from FastAPIBackend import memstore
 from ZetaPolicy.constants import NUM_MFCC, NO_features, SL_MODEL_FILENAME
@@ -13,7 +13,7 @@ from ZetaPolicy.environments import LiveEnv
 from ZetaPolicy.feature_type import FeatureType
 from ZetaPolicy.models import get_model_9_rl
 from ZetaPolicy.rl_custom_policy import ZetaPolicy
-from rl_framework.rl2.agents import DQNAgent
+from rl.agents import DQNAgent
 
 
 def initialize_platform():

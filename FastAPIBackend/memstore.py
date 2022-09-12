@@ -1,12 +1,12 @@
 import numpy as np
-from tensorflow.keras import Model
+from keras import Model
 
 from ZetaPolicy.constants import WINDOW_LENGTH
 from ZetaPolicy.datastore_live import LiveDatastore
 from ZetaPolicy.environments import AbstractEnv
-from rl_framework.rl2.core import Agent
-from rl_framework.rl2.memory import SequentialMemory
-from rl_framework.rl2.policy import Policy
+from rl.core import Agent
+from rl.memory import SequentialMemory
+from rl.policy import Policy
 
 RL_MODEL: Model = None
 ENV: AbstractEnv = None

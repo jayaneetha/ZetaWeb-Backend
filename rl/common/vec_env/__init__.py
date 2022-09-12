@@ -1,12 +1,10 @@
 # Inspired from VecEnv from OpenAI Baselines
 import logging
 
-
 class VecEnv:
     """
     An abstract asynchronous, vectorized environment.
     """
-
     def __init__(self, num_envs, observation_space, action_space):
         self.num_envs = num_envs
         self.observation_space = observation_space
@@ -60,12 +58,10 @@ class VecEnv:
     def seed(self, i):
         raise NotImplementedError()
 
-
 class CloudpickleWrapper:
     """
     Uses cloudpickle to serialize contents (otherwise multiprocessing tries to use pickle)
     """
-
     def __init__(self, x):
         self.x = x
 

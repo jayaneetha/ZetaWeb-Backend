@@ -1,4 +1,6 @@
-from rl_framework.rl2.util import *
+import numpy as np
+
+from rl.util import *
 
 
 class Policy:
@@ -14,7 +16,6 @@ class Policy:
     # Arguments
         agent (rl.core.Agent): Agent used
     """
-
     def _set_agent(self, agent):
         self.agent = agent
 
@@ -44,7 +45,6 @@ class LinearAnnealedPolicy(Policy):
     Linear Annealing Policy computes a current threshold value and
     transfers it to an inner policy which chooses the action. The threshold
     value is following a linear function decreasing over time."""
-
     def __init__(self, inner_policy, attr, value_max, value_min, value_test, nb_steps):
         if not hasattr(inner_policy, attr):
             raise ValueError(f'Policy does not have attribute "{attr}".')
@@ -116,7 +116,6 @@ class LinearAnnealedPolicy(Policy):
         config['inner_policy'] = get_object_config(self.inner_policy)
         return config
 
-
 class SoftmaxPolicy(Policy):
     """ Implement softmax policy for multinimial distribution
 
@@ -125,7 +124,6 @@ class SoftmaxPolicy(Policy):
     - takes action according to the pobability distribution
 
     """
-
     def select_action(self, nb_actions, probs):
         """Return the selected action
 
@@ -139,7 +137,6 @@ class SoftmaxPolicy(Policy):
         action = np.random.choice(range(nb_actions), p=probs)
         return action
 
-
 class EpsGreedyQPolicy(Policy):
     """Implement the epsilon greedy policy
 
@@ -148,7 +145,6 @@ class EpsGreedyQPolicy(Policy):
     - takes a random action with probability epsilon
     - takes current best action with prob (1 - epsilon)
     """
-
     def __init__(self, eps=.1):
         super().__init__()
         self.eps = eps
@@ -187,7 +183,6 @@ class GreedyQPolicy(Policy):
 
     Greedy policy returns the current best action according to q_values
     """
-
     def select_action(self, q_values):
         """Return the selected action
 
@@ -208,7 +203,6 @@ class BoltzmannQPolicy(Policy):
     Boltzmann Q Policy builds a probability law on q values and returns
     an action selected randomly according to this law.
     """
-
     def __init__(self, tau=1., clip=(-500., 500.)):
         super().__init__()
         self.tau = tau
@@ -253,7 +247,6 @@ class MaxBoltzmannQPolicy(Policy):
 
     https://pure.uva.nl/ws/files/3153478/8461_UBA003000033.pdf
     """
-
     def __init__(self, eps=.1, tau=1., clip=(-500., 500.)):
         super().__init__()
         self.eps = eps
@@ -341,7 +334,7 @@ class BoltzmannGumbelQPolicy(Policy):
         assert self.action_counts is not None, self.agent.step
         assert self.action_counts.shape == q_values.shape, (self.action_counts.shape, q_values.shape)
 
-        beta = self.C / np.sqrt(self.action_counts)
+        beta = self.C/np.sqrt(self.action_counts)
         Z = np.random.gumbel(size=q_values.shape)
 
         perturbation = beta * Z

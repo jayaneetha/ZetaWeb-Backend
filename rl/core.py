@@ -4,7 +4,7 @@ from copy import deepcopy
 import numpy as np
 from tensorflow.keras.callbacks import History
 
-from rl_framework.rl2.callbacks import (
+from rl.callbacks import (
     CallbackList,
     TestLogger,
     TrainEpisodeLogger,
@@ -36,7 +36,6 @@ class Agent:
     # Arguments
         processor (`Processor` instance): See [Processor](#processor) for details.
     """
-
     def __init__(self, processor=None):
         self.processor = processor
         self.training = False
@@ -82,8 +81,7 @@ class Agent:
             A `keras.callbacks.History` instance that recorded the entire training process.
         """
         if not self.compiled:
-            raise RuntimeError(
-                'Your tried to fit your agent but it hasn\'t been compiled yet. Please call `compile()` before `fit()`.')
+            raise RuntimeError('Your tried to fit your agent but it hasn\'t been compiled yet. Please call `compile()` before `fit()`.')
         if action_repetition < 1:
             raise ValueError(f'action_repetition must be >= 1, is {action_repetition}')
 
@@ -149,12 +147,10 @@ class Agent:
                         observation, reward, done, info = env.step(action)
                         observation = deepcopy(observation)
                         if self.processor is not None:
-                            observation, reward, done, info = self.processor.process_step(observation, reward, done,
-                                                                                          info)
+                            observation, reward, done, info = self.processor.process_step(observation, reward, done, info)
                         callbacks.on_action_end(action)
                         if done:
-                            warnings.warn(
-                                f'Env ended before {nb_random_start_steps} random steps could be performed at the start. You should probably lower the `nb_max_start_steps` parameter.')
+                            warnings.warn(f'Env ended before {nb_random_start_steps} random steps could be performed at the start. You should probably lower the `nb_max_start_steps` parameter.')
                             observation = deepcopy(env.reset())
                             if self.processor is not None:
                                 observation = self.processor.process_observation(observation)
@@ -271,8 +267,7 @@ class Agent:
             A `keras.callbacks.History` instance that recorded the entire training process.
         """
         if not self.compiled:
-            raise RuntimeError(
-                'Your tried to test your agent but it hasn\'t been compiled yet. Please call `compile()` before `test()`.')
+            raise RuntimeError('Your tried to test your agent but it hasn\'t been compiled yet. Please call `compile()` before `test()`.')
         if action_repetition < 1:
             raise ValueError(f'action_repetition must be >= 1, is {action_repetition}')
 
@@ -332,8 +327,7 @@ class Agent:
                     observation, r, done, info = self.processor.process_step(observation, r, done, info)
                 callbacks.on_action_end(action)
                 if done:
-                    warnings.warn(
-                        f'Env ended before {nb_random_start_steps} random steps could be performed at the start. You should probably lower the `nb_max_start_steps` parameter.')
+                    warnings.warn(f'Env ended before {nb_random_start_steps} random steps could be performed at the start. You should probably lower the `nb_max_start_steps` parameter.')
                     observation = deepcopy(env.reset())
                     if self.processor is not None:
                         observation = self.processor.process_observation(observation)

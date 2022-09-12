@@ -1,7 +1,7 @@
 import numpy as np
 
-from rl_framework.rl2.core import Processor
-from rl_framework.rl2.util import WhiteningNormalizer
+from rl.core import Processor
+from rl.util import WhiteningNormalizer
 
 
 class MultiInputProcessor(Processor):
@@ -19,14 +19,13 @@ class MultiInputProcessor(Processor):
             Your neural network that you use for the policy must have a corresponding number of
             inputs.
     """
-
     def __init__(self, nb_inputs):
         self.nb_inputs = nb_inputs
 
     def process_state_batch(self, state_batch):
         input_batches = [[] for x in range(self.nb_inputs)]
         if hasattr(state_batch, 'shape'):
-            if state_batch.shape >= (1, 1):
+            if state_batch.shape >= (1,1):
                 if isinstance(state_batch[0][0], dict):
                     return self.handle_dict(state_batch)
                 if state_batch[0][0].ndim == 0:
@@ -42,7 +41,7 @@ class MultiInputProcessor(Processor):
                 input_batches[idx].append(s)
         return [np.array(x) for x in input_batches]
 
-    def handle_dict(self, state_batch):
+    def handle_dict(self,state_batch):
         """Handles dict-like observations"""
 
         names = state_batch[0][0].keys()
@@ -74,7 +73,6 @@ class WhiteningNormalizerProcessor(Processor):
     these weights alongside the policy if you intend to load it later. It is the responsibility of
     the user to do so.
     """
-
     def __init__(self):
         self.normalizer = None
 
