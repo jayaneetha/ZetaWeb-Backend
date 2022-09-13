@@ -32,17 +32,15 @@ def process_file(file: UploadFile, db: Session):
 
     mfcc = mfcc.reshape(1, 1, NUM_MFCC, NO_features)
 
-    rl_action = memstore.AGENT.forward(mfcc)
+    rl_predictions = memstore.RL_MODEL.predict([mfcc], verbose=False)
+    sl_predictions = memstore.SL_MODEL.predict([mfcc], verbose=False)
 
-    sl_predictions = memstore.SL_MODEL.predict([mfcc])
-    rl_emotion = EMOTIONS[rl_action]
+    rl_emotion = EMOTIONS[np.argmax(rl_predictions)]
     sl_emotion = EMOTIONS[np.argmax(sl_predictions)]
 
     feedback_item = FeedbackItemCreate(audio_id=audio_id, rl_emotion=rl_emotion, sl_emotion=sl_emotion,
                                        original_filename=file.filename)
     crud.create_feedback_item(db=db, feedback_item=feedback_item)
-
-    memstore.STATE_STORE[audio_id] = mfcc
 
     return audio_id, rl_emotion, sl_emotion
 

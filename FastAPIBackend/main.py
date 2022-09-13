@@ -1,5 +1,4 @@
 import logging
-from logging import config
 from typing import List
 
 from fastapi import FastAPI, Depends
@@ -12,9 +11,9 @@ from FastAPIBackend.db import db_model, crud, schemas
 from FastAPIBackend.db.database import engine, SessionLocal
 from FastAPIBackend.platform import initialize_platform
 
-# config.fileConfig('logging.conf', disable_existing_loggers=False)
+logging.config.fileConfig('logging.conf', disable_existing_loggers=False)
 
-# logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 db_model.Base.metadata.create_all(bind=engine)
 
@@ -41,10 +40,9 @@ initialize_platform()
 
 
 @app.post("/uploadfile")
-def create_upload_file(audioFile: UploadFile, db: Session = Depends(get_db)):
-    audio_id, rl_emotion, sl_emotion = service.process_file(audioFile, db)
+def create_upload_file(audio_file: UploadFile, db: Session = Depends(get_db)):
+    audio_id, rl_emotion, sl_emotion = service.process_file(audio_file, db)
     return {'audio_id': audio_id, 'rl_emotion': rl_emotion, 'sl_emotion': sl_emotion}
-
 
 @app.post("/feedback")
 def add_feedback(audio_id: str, feedback: bool, model: str, db: Session = Depends(get_db)):
