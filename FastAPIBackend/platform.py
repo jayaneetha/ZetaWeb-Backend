@@ -13,6 +13,7 @@ def initialize_platform():
 
     memstore.SL_MODEL = _load_model(SL_MODEL_FILENAME)
     memstore.RL_MODEL = _load_model(RL_MODEL_FILENAME)
+
     logging.log(logging.INFO, "Platform Initialized")
 
 

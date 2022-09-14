@@ -10,6 +10,7 @@ class Feedback(Base):
     original_filename = Column(String)
     rl_feedback = Column(Boolean, nullable=True)
     sl_feedback = Column(Boolean, nullable=True)
+    processed = Column(Boolean, nullable=True)
     rl_emotion = Column(String)
     sl_emotion = Column(String)
 

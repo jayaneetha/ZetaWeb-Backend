@@ -6,7 +6,7 @@ from pathlib import Path
 
 import librosa
 import numpy as np
-from fastapi import UploadFile
+from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
 from FastAPIBackend import memstore
@@ -20,13 +20,23 @@ logger = logging.getLogger(__name__)
 
 
 def process_file(file: UploadFile, db: Session):
+    logger.info(file.content_type)
+
+    if file.content_type not in ['audio/wave', 'audio/wav']:
+        raise HTTPException(status_code=400, detail=f"Invalid file type {file.content_type}. Required: audio/wav")
+
     audio_id = str(uuid.uuid4())
     logger.info(f"audio id: {audio_id}")
 
     file_url = store_upload_file(file, audio_id)
 
     audio, sr = librosa.load(file_url, sr=SR)
-    audio = split_audio(audio, sr, DURATION)[0]
+    audio_frames = split_audio(audio, sr, DURATION)
+    if len(audio_frames) > 0:
+        audio = audio_frames[0]
+    else:
+        raise HTTPException(status_code=400, detail=f"Audio Length is smaller than {DURATION}s")
+
     mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=NUM_MFCC)
     mfcc = deepcopy(mfcc)
 
@@ -39,7 +49,7 @@ def process_file(file: UploadFile, db: Session):
     sl_emotion = EMOTIONS[np.argmax(sl_predictions)]
 
     feedback_item = FeedbackItemCreate(audio_id=audio_id, rl_emotion=rl_emotion, sl_emotion=sl_emotion,
-                                       original_filename=file.filename)
+                                       original_filename=file.filename, processed=False)
     crud.create_feedback_item(db=db, feedback_item=feedback_item)
 
     return audio_id, rl_emotion, sl_emotion
@@ -67,16 +77,13 @@ def add_feedback(audio_id: str, model: str, feedback: bool, db: Session):
             if model == 'SL':
                 feedback_item.sl_feedback = feedback
 
-            memstore.AGENT.backward(feedback, False)
-            memstore.AGENT.step += 1
-
             return crud.update_feedback_item(db=db, feedback_item=feedback_item)
         else:
             logger.error(f"Invalid audio id value: {audio_id}")
-            raise RuntimeError(f"Invalid audio id value: {audio_id}")
+            raise HTTPException(status_code=404, detail=f"audio id not found: {audio_id}")
     else:
         logger.error(f"Invalid model value: {model}")
-        raise RuntimeError(f"Invalid model value: {model}")
+        raise HTTPException(status_code=400, detail=f"Invalid model value: {model}")
 
 
 def get_model_performance(skip: int, limit: int, db: Session) -> list:

@@ -8,6 +8,7 @@ class FeedbackItemBase(BaseModel):
     original_filename: str
     rl_feedback: Optional[bool]
     sl_feedback: Optional[bool]
+    processed: Optional[bool]
     rl_emotion: str
     sl_emotion: str
 
