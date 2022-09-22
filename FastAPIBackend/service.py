@@ -1,4 +1,5 @@
 import logging
+import os
 import shutil
 import uuid
 from copy import deepcopy
@@ -29,6 +30,12 @@ def process_file(file: UploadFile, db: Session):
     logger.info(f"audio id: {audio_id}")
 
     file_url = store_upload_file(file, audio_id)
+
+    file_url = f'{os.getcwd()}/{file_url}'
+
+    print(os.getcwd())
+
+    print(f'File Path: {file_url}')
 
     audio, sr = librosa.load(file_url, sr=SR)
     audio_frames = split_audio(audio, sr, DURATION)
