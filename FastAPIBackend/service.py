@@ -5,8 +5,8 @@ import uuid
 from copy import deepcopy
 from pathlib import Path
 
+import ffmpeg
 import librosa
-import moviepy.editor as moviepy
 import numpy as np
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 def process_file(file: UploadFile, db: Session):
-    logger.info(file.content_type)
+    logger.info(f'Content Type: {file.content_type}')
 
-    if file.content_type not in ['audio/wave', 'audio/wav']:
+    if file.content_type not in ['audio/wave', 'audio/wav', 'video/webm']:
         raise HTTPException(status_code=400, detail=f"Invalid file type {file.content_type}. Required: audio/wav")
 
     audio_id = str(uuid.uuid4())
@@ -32,13 +32,15 @@ def process_file(file: UploadFile, db: Session):
 
     file_url = store_upload_file(file, audio_id)
 
+    file_url = f'{os.getcwd()}/{file_url}'
+
     if str(file_url).endswith("webm"):
         file_url = convert_webm_to_wav(str(file_url))
 
-    file_url = f'{os.getcwd()}/{file_url}'
-
     audio, sr = librosa.load(file_url, sr=SR)
+    logger.debug(f'Loaded audio {file_url}, size: {audio.shape}, SR: {sr}')
     audio_frames = split_audio(audio, sr, DURATION)
+    logger.debug(f'# frames: {len(audio_frames)}')
     if len(audio_frames) > 0:
         audio = audio_frames[0]
     else:
@@ -46,6 +48,7 @@ def process_file(file: UploadFile, db: Session):
 
     mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=NUM_MFCC)
     mfcc = deepcopy(mfcc)
+    logger.debug(f'MFCC shape: {mfcc.shape}')
 
     mfcc = mfcc.reshape(1, 1, NUM_MFCC, NO_features)
 
@@ -69,14 +72,21 @@ def store_upload_file(file: UploadFile, filename: str):
             shutil.copyfileobj(file.file, buffer)
     finally:
         file.file.close()
+    logger.debug(f'File Stored: {destination}')
     return destination
 
 
 def convert_webm_to_wav(webm_file: str):
     wav_file_name = f'{webm_file}.wav'
-    print(f"converting {webm_file} to {wav_file_name}")
-    clip = moviepy.AudioFileClip(webm_file)
-    clip.write_audiofile(wav_file_name)
+    logger.debug(f"Converting {webm_file} to {wav_file_name}")
+
+    stream = ffmpeg.input(webm_file)
+    stream = ffmpeg.output(stream, wav_file_name)
+    ffmpeg.run(stream)
+
+    os.remove(webm_file)
+    logger.debug(f"Deleted {webm_file} to {wav_file_name}")
+
     return wav_file_name
 
 
