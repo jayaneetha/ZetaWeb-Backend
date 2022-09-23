@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import librosa
+import moviepy.editor as moviepy
 import numpy as np
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
@@ -31,11 +32,10 @@ def process_file(file: UploadFile, db: Session):
 
     file_url = store_upload_file(file, audio_id)
 
+    if str(file_url).endswith("webm"):
+        file_url = convert_webm_to_wav(str(file_url))
+
     file_url = f'{os.getcwd()}/{file_url}'
-
-    print(os.getcwd())
-
-    print(f'File Path: {file_url}')
 
     audio, sr = librosa.load(file_url, sr=SR)
     audio_frames = split_audio(audio, sr, DURATION)
@@ -70,6 +70,14 @@ def store_upload_file(file: UploadFile, filename: str):
     finally:
         file.file.close()
     return destination
+
+
+def convert_webm_to_wav(webm_file: str):
+    wav_file_name = f'{webm_file}.wav'
+    print(f"converting {webm_file} to {wav_file_name}")
+    clip = moviepy.AudioFileClip(webm_file)
+    clip.write_audiofile(wav_file_name)
+    return wav_file_name
 
 
 def add_feedback(audio_id: str, model: str, feedback: bool, db: Session):

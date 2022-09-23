@@ -13,6 +13,7 @@ RUN rm /etc/apt/sources.list.d/nvidia-ml.list
 
 RUN apt-get -y update
 RUN apt-get install -y libsndfile1
+RUN apt-get install -y ffmpeg
 
 USER user
 
